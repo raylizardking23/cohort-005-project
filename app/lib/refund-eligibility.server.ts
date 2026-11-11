@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, notExists, sql } from "drizzle-orm";
 import { db } from "~/db";
 import {
   coupons,
@@ -18,7 +18,6 @@ export const REFUND_COMPLETION_LIMIT = 0.5;
 export type RefundIneligibleReason =
   | "no-purchase"
   | "already-requested"
-  | "claimed-seat"
   | "window-closed"
   | "completed-too-much"
   | "watched-too-much";
@@ -35,7 +34,6 @@ export type RefundEligibility =
 export type RefundFacts = {
   purchase: { id: number; amountPaid: number; createdAt: string };
   hasRefundRequest: boolean;
-  isClaimedSeat: boolean;
   completedLessons: number;
   totalLessons: number;
   secondsWatched: number;
@@ -45,14 +43,13 @@ export const INELIGIBLE_RESPONSES: Record<
   RefundIneligibleReason,
   { message: string; status: number }
 > = {
-  "no-purchase": { message: "You have not bought this course.", status: 403 },
+  "no-purchase": {
+    message: "You have no personal purchase of this course to refund.",
+    status: 403,
+  },
   "already-requested": {
     message: "You have already made a refund request for this purchase.",
     status: 409,
-  },
-  "claimed-seat": {
-    message: "A claimed team seat cannot be refunded.",
-    status: 403,
   },
   "window-closed": {
     message: `The ${REFUND_WINDOW_DAYS}-day refund window has closed.`,
@@ -89,10 +86,6 @@ export function decideRefundEligibility(
     return { eligible: false, reason: "already-requested" };
   }
 
-  if (facts.isClaimedSeat) {
-    return { eligible: false, reason: "claimed-seat" };
-  }
-
   const purchasedAt = new Date(facts.purchase.createdAt);
   const windowEnd = new Date(purchasedAt);
   windowEnd.setDate(windowEnd.getDate() + REFUND_WINDOW_DAYS);
@@ -122,16 +115,31 @@ export function decideRefundEligibility(
   };
 }
 
-function getLatestPurchase(userId: number, courseId: number) {
+/**
+ * The learner's latest Personal Purchase of the course. A purchase that minted
+ * coupons is a Seat Purchase and can never be refunded (see docs/adr/0004).
+ */
+function getLatestPersonalPurchase(userId: number, courseId: number) {
+  const mintedSeats = db
+    .select({ one: sql`1` })
+    .from(coupons)
+    .where(eq(coupons.purchaseId, purchases.id));
+
   return db
     .select()
     .from(purchases)
-    .where(and(eq(purchases.userId, userId), eq(purchases.courseId, courseId)))
+    .where(
+      and(
+        eq(purchases.userId, userId),
+        eq(purchases.courseId, courseId),
+        notExists(mintedSeats)
+      )
+    )
     .orderBy(sql`${purchases.createdAt} desc`)
     .get();
 }
 
-function getLessonIdsForCourse(courseId: number): number[] {
+export function getLessonIdsForCourse(courseId: number): number[] {
   return db
     .select({ id: lessons.id })
     .from(lessons)
@@ -141,7 +149,7 @@ function getLessonIdsForCourse(courseId: number): number[] {
     .map((row) => row.id);
 }
 
-function getCompletedLessonCount(userId: number, lessonIds: number[]) {
+export function getCompletedLessonCount(userId: number, lessonIds: number[]) {
   if (lessonIds.length === 0) return 0;
 
   const result = db
@@ -159,7 +167,7 @@ function getCompletedLessonCount(userId: number, lessonIds: number[]) {
   return result?.count ?? 0;
 }
 
-function getSecondsWatched(userId: number, lessonIds: number[]) {
+export function getSecondsWatched(userId: number, lessonIds: number[]) {
   if (lessonIds.length === 0) return 0;
 
   const furthestPerLesson = db
@@ -188,7 +196,7 @@ export function getRefundEligibility(
   courseId: number,
   now: Date = new Date()
 ): RefundEligibility {
-  const purchase = getLatestPurchase(userId, courseId);
+  const purchase = getLatestPersonalPurchase(userId, courseId);
   if (!purchase) return { eligible: false, reason: "no-purchase" };
 
   const refundRequest = db
@@ -197,21 +205,12 @@ export function getRefundEligibility(
     .where(eq(refunds.purchaseId, purchase.id))
     .get();
 
-  const claimedSeat = db
-    .select({ id: coupons.id })
-    .from(coupons)
-    .where(
-      and(eq(coupons.purchaseId, purchase.id), isNotNull(coupons.redeemedAt))
-    )
-    .get();
-
   const lessonIds = getLessonIdsForCourse(courseId);
 
   return decideRefundEligibility(
     {
       purchase,
       hasRefundRequest: Boolean(refundRequest),
-      isClaimedSeat: Boolean(claimedSeat),
       completedLessons: getCompletedLessonCount(userId, lessonIds),
       totalLessons: lessonIds.length,
       secondsWatched: getSecondsWatched(userId, lessonIds),

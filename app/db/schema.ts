@@ -132,6 +132,9 @@ export const enrollments = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
     completedAt: text("completed_at"),
+    // Set when the learner's Refund Request is approved. An ended Enrollment
+    // no longer grants access, but the learner's Progress is kept.
+    endedAt: text("ended_at"),
   },
   (table) => [index("enrollments_course_idx").on(table.courseId)]
 );
@@ -249,6 +252,8 @@ export const refunds = sqliteTable(
       .$defaultFn(() => new Date().toISOString()),
     resolvedAt: text("resolved_at"),
     resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
+    // Required when an Admin declines; shown to the learner.
+    declineNote: text("decline_note"),
   },
   (table) => [index("refunds_purchase_idx").on(table.purchaseId)]
 );

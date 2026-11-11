@@ -63,6 +63,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       refundAmount: purchases.amountPaid,
       status: refunds.status,
       reason: refunds.reason,
+      declineNote: refunds.declineNote,
       requestedAt: refunds.requestedAt,
     })
     .from(refunds)
@@ -244,6 +245,12 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
                   {new Date(refundRequest.requestedAt).toLocaleDateString()}
                 </p>
                 <p className="mt-2 text-sm">{refundRequest.reason}</p>
+                {refundRequest.declineNote && (
+                  <p className="mt-2 rounded-md bg-muted p-2 text-sm">
+                    <span className="font-medium">Why we declined: </span>
+                    {refundRequest.declineNote}
+                  </p>
+                )}
               </div>
             ))}
           </CardContent>

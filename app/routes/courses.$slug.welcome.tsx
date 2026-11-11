@@ -1,6 +1,7 @@
 import { Link, redirect } from "react-router";
 import type { Route } from "./+types/courses.$slug.welcome";
 import { db } from "~/db";
+import { isActiveEnrollment } from "~/lib/enrollment.server";
 import {
   courses,
   categories,
@@ -82,7 +83,11 @@ function isUserEnrolled(userId: number, courseId: number) {
     .select()
     .from(enrollments)
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isActiveEnrollment()
+      )
     )
     .get();
   return !!enrollment;
@@ -157,11 +162,7 @@ export default function Welcome({ loaderData }: Route.ComponentProps) {
                 rel="noopener noreferrer"
                 className="block"
               >
-                <Button
-                  variant="outline"
-                  size="lg"
-                  className="w-full max-w-sm"
-                >
+                <Button variant="outline" size="lg" className="w-full max-w-sm">
                   <MessageCircle className="mr-2 size-5" />
                   Join the Discord Community
                 </Button>

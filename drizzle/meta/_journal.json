@@ -78,6 +78,13 @@
       "when": 1794352616944,
       "tag": "0010_burly_vanisher",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794359647240,
+      "tag": "0011_flowery_blade",
+      "breakpoints": true
     }
   ]
 }

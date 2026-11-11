@@ -12,6 +12,7 @@ import {
   LessonProgressStatus,
   QuestionType,
   TeamMemberRole,
+  RefundStatus,
 } from "../app/db/schema";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -222,15 +223,40 @@ async function seed() {
   // generated at the bottom of this file. Sign-up dates are spread across the
   // last twelve months, including the last few days.
   const cohortNames = [
-    "Ava Nakamura", "Noah Blackwood", "Isla Fernandes", "Ethan Okafor",
-    "Mia Lindqvist", "Lucas Moreau", "Zara Haddad", "Felix Andersen",
-    "Nina Kowalski", "Omar Rahman", "Chloe Beaumont", "Dmitri Volkov",
-    "Priya Raghavan", "Tomas Silva", "Hana Kim", "Gabriel Rossi",
-    "Amara Diallo", "Jonas Weber", "Lena Petrova", "Kwame Mensah",
-    "Sofia Ricci", "Aarav Shah", "Freya Nilsen", "Diego Castillo",
-    "Yuki Tanaka", "Rosa Delgado", "Idris Bello", "Clara Hoffmann",
-    "Mateo Alvarez", "Elif Demir", "Ruben Ortiz", "Anika Bose",
-    "Caleb Ncube", "Marta Novak",
+    "Ava Nakamura",
+    "Noah Blackwood",
+    "Isla Fernandes",
+    "Ethan Okafor",
+    "Mia Lindqvist",
+    "Lucas Moreau",
+    "Zara Haddad",
+    "Felix Andersen",
+    "Nina Kowalski",
+    "Omar Rahman",
+    "Chloe Beaumont",
+    "Dmitri Volkov",
+    "Priya Raghavan",
+    "Tomas Silva",
+    "Hana Kim",
+    "Gabriel Rossi",
+    "Amara Diallo",
+    "Jonas Weber",
+    "Lena Petrova",
+    "Kwame Mensah",
+    "Sofia Ricci",
+    "Aarav Shah",
+    "Freya Nilsen",
+    "Diego Castillo",
+    "Yuki Tanaka",
+    "Rosa Delgado",
+    "Idris Bello",
+    "Clara Hoffmann",
+    "Mateo Alvarez",
+    "Elif Demir",
+    "Ruben Ortiz",
+    "Anika Bose",
+    "Caleb Ncube",
+    "Marta Novak",
   ];
 
   const cohort = db
@@ -2058,7 +2084,9 @@ This course is still in draft while the cluster examples are rewritten against t
   markComplete(students[4].id, course1LessonIds[0], 12);
   markInProgress(students[4].id, course1LessonIds[1]);
 
-  console.log(`Created ${countRows(schema.lessonProgress)} lesson progress records.`);
+  console.log(
+    `Created ${countRows(schema.lessonProgress)} lesson progress records.`
+  );
 
   // ─── Quiz Attempts ───
 
@@ -2736,6 +2764,49 @@ This course is still in draft while the cluster examples are rewritten against t
 
   console.log(`Created ${watchEventRows.length} video watch events.`);
 
+  // ─── Refund Requests ───
+  // A few Open requests on recent Personal Purchases, so the Admin's refunds
+  // screen has something to resolve. None are resolved: an Approved request
+  // would end an Enrollment and change the revenue the analytics are checked
+  // against.
+
+  const seatPurchaseIds = new Set(
+    db
+      .select({ purchaseId: schema.coupons.purchaseId })
+      .from(schema.coupons)
+      .all()
+      .map((row) => row.purchaseId)
+  );
+
+  const recentPersonalPurchases = db
+    .select()
+    .from(schema.purchases)
+    .where(gte(schema.purchases.createdAt, daysAgo(7)))
+    .orderBy(schema.purchases.createdAt)
+    .all()
+    .filter((purchase) => !seatPurchaseIds.has(purchase.id));
+
+  const refundReasons = [
+    "The course moves faster than I expected and I am not ready for it yet.",
+    "I bought the wrong course by mistake — I meant to buy the beginner one.",
+    "The videos keep buffering on my connection, so I cannot follow along.",
+  ];
+
+  recentPersonalPurchases.slice(0, refundReasons.length).forEach((purchase, i) => {
+    db.insert(schema.refunds)
+      .values({
+        purchaseId: purchase.id,
+        status: RefundStatus.Open,
+        reason: refundReasons[i],
+        requestedAt: new Date(
+          Math.min(Date.parse(purchase.createdAt) + 86_400_000, Date.now())
+        ).toISOString(),
+      })
+      .run();
+  });
+
+  console.log(`Created ${countRows(schema.refunds)} open refund requests.`);
+
   // ─── Summary ───
 
   const sevenDaysAgo = daysAgo(7);
@@ -2763,6 +2834,7 @@ This course is still in draft while the cluster examples are rewritten against t
     `  Quizzes: ${countRows(schema.quizzes)}, attempts: ${countRows(schema.quizAttempts)}`
   );
   console.log(`  Enrollments: ${countRows(schema.enrollments)}`);
+  console.log(`  Refund requests: ${countRows(schema.refunds)}`);
   console.log(`  Course ratings: ${countRows(schema.courseRatings)}`);
   console.log(`  Lesson comments: ${countRows(schema.comments)}`);
   console.log(

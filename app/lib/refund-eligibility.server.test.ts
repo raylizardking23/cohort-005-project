@@ -13,7 +13,6 @@ function facts(overrides: Partial<RefundFacts> = {}): RefundFacts {
   return {
     purchase: { id: 7, amountPaid: 4900, createdAt: purchasedAt.toISOString() },
     hasRefundRequest: false,
-    isClaimedSeat: false,
     completedLessons: 0,
     totalLessons: 10,
     secondsWatched: 0,
@@ -48,14 +47,6 @@ describe("decideRefundEligibility", () => {
       new Date(2026, 0, 2)
     );
     expect(result).toEqual({ eligible: false, reason: "already-requested" });
-  });
-
-  it("refuses a claimed team seat", () => {
-    const result = decideRefundEligibility(
-      facts({ isClaimedSeat: true }),
-      new Date(2026, 0, 2)
-    );
-    expect(result).toEqual({ eligible: false, reason: "claimed-seat" });
   });
 
   it("refuses once half the lessons are completed", () => {

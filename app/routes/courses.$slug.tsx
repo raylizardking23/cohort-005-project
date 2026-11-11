@@ -6,6 +6,7 @@ import type { Route } from "./+types/courses.$slug";
 import { getCurrentUserId } from "~/lib/session";
 import { getRefundEligibility } from "~/lib/refund-eligibility.server";
 import { db } from "~/db";
+import { isActiveEnrollment } from "~/lib/enrollment.server";
 import {
   courses,
   categories,
@@ -135,7 +136,11 @@ function isUserEnrolled(userId: number, courseId: number) {
     .select()
     .from(enrollments)
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isActiveEnrollment()
+      )
     )
     .get();
   return !!enrollment;

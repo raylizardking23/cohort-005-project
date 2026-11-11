@@ -7,6 +7,7 @@ import { Button } from "~/components/ui/button";
 import { AlertTriangle, ArrowLeft, Users, Award } from "lucide-react";
 import { data, isRouteErrorResponse } from "react-router";
 import { db } from "~/db";
+import { isActiveEnrollment } from "~/lib/enrollment.server";
 import {
   modules,
   lessons,
@@ -37,7 +38,7 @@ function getCourseEnrolledStudents(courseId: number) {
       completedAt: enrollments.completedAt,
     })
     .from(enrollments)
-    .where(eq(enrollments.courseId, courseId))
+    .where(and(eq(enrollments.courseId, courseId), isActiveEnrollment()))
     .all();
 }
 

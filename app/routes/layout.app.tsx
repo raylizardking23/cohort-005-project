@@ -7,6 +7,7 @@ import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { eq, and, or, sql, desc } from "drizzle-orm";
 import { db } from "~/db";
+import { isActiveEnrollment } from "~/lib/enrollment.server";
 import {
   users,
   courses,
@@ -17,6 +18,10 @@ import {
   teamMembers,
   TeamMemberRole,
   LessonProgressStatus,
+  refunds,
+  RefundStatus,
+  UserRole,
+  enrollments,
 } from "~/db/schema";
 
 function getAllUsers() {
@@ -164,11 +169,29 @@ function getRecentlyProgressedCourses(userId: number, limit: number = 3) {
     .innerJoin(lessons, eq(lessonProgress.lessonId, lessons.id))
     .innerJoin(modules, eq(lessons.moduleId, modules.id))
     .innerJoin(courses, eq(modules.courseId, courses.id))
+    .innerJoin(
+      enrollments,
+      and(
+        eq(enrollments.userId, lessonProgress.userId),
+        eq(enrollments.courseId, courses.id),
+        isActiveEnrollment()
+      )
+    )
     .where(eq(lessonProgress.userId, userId))
     .groupBy(courses.id)
     .orderBy(desc(sql`max(${lessonProgress.id})`))
     .limit(limit)
     .all();
+}
+
+function countOpenRefundRequests() {
+  return (
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(refunds)
+      .where(eq(refunds.status, RefundStatus.Open))
+      .get()?.count ?? 0
+  );
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -185,7 +208,11 @@ export async function loader({ request }: Route.LoaderArgs) {
           course.courseId
         );
         const totalLessons = getTotalLessonCount(course.courseId);
-        const progress = calculateProgress(currentUserId, course.courseId, false);
+        const progress = calculateProgress(
+          currentUserId,
+          course.courseId,
+          false
+        );
         return {
           courseId: course.courseId,
           title: course.courseTitle,
@@ -213,6 +240,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    openRefundRequestCount:
+      currentUser?.role === UserRole.Admin ? countOpenRefundRequests() : 0,
   };
 }
 
@@ -225,6 +254,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    openRefundRequestCount,
   } = loaderData;
 
   return (
@@ -233,6 +263,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        openRefundRequestCount={openRefundRequestCount}
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />

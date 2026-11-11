@@ -19,6 +19,8 @@ import {
 } from "drizzle-orm";
 import { alias, type SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { db } from "~/db";
+import { isActiveEnrollment } from "~/lib/enrollment.server";
+import { netAmountPaid } from "~/lib/refund-resolution.server";
 import {
   CourseStatus,
   LessonProgressStatus,
@@ -241,7 +243,9 @@ function getStudentRevenue(
     .from(enrollments)
     .innerJoin(courses, eq(enrollments.courseId, courses.id))
     .innerJoin(users, eq(users.id, enrollments.userId))
-    .where(scopeOn(enrollments.enrolledAt, instructorId, range))
+    .where(
+      and(scopeOn(enrollments.enrolledAt, instructorId, range), isActiveEnrollment())
+    )
     .orderBy(users.name)
     .all();
 
@@ -256,7 +260,7 @@ function getStudentRevenue(
     .where(eq(coupons.purchaseId, purchases.id));
 
   const direct = db
-    .select({ userId: purchases.userId, paid: sum(purchases.amountPaid) })
+    .select({ userId: purchases.userId, paid: sum(netAmountPaid) })
     .from(purchases)
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(
@@ -318,7 +322,7 @@ function getTopBuyers(
       userId: users.id,
       name: users.name,
       email: users.email,
-      spend: sum(purchases.amountPaid),
+      spend: sum(netAmountPaid),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -326,7 +330,7 @@ function getTopBuyers(
     .innerJoin(users, eq(users.id, purchases.userId))
     .where(purchaseScope(instructorId, range))
     .groupBy(users.id)
-    .orderBy(desc(sum(purchases.amountPaid)))
+    .orderBy(desc(sum(netAmountPaid)))
     .limit(TOP_BUYER_LIMIT)
     .all();
 
@@ -364,7 +368,13 @@ function getTopBuyers(
       .selectDistinct({ userId: enrollments.userId })
       .from(enrollments)
       .innerJoin(courses, eq(enrollments.courseId, courses.id))
-      .where(and(inArray(enrollments.userId, buyerIds), ownedBy(instructorId)))
+      .where(
+        and(
+          inArray(enrollments.userId, buyerIds),
+          ownedBy(instructorId),
+          isActiveEnrollment()
+        )
+      )
       .all()
       .map((row) => row.userId)
   );
@@ -440,7 +450,7 @@ function getRevenueOverTime(
   })`;
 
   const rows = db
-    .select({ bucket: bucketExpr, gross: sum(purchases.amountPaid) })
+    .select({ bucket: bucketExpr, gross: sum(netAmountPaid) })
     .from(purchases)
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(purchaseScope(instructorId, range))
@@ -508,7 +518,7 @@ function getCourseProgressSummary(courseId: number): CourseProgressSummary {
         inArray(lessonProgress.lessonId, courseLessonIds(courseId))
       )
     )
-    .where(eq(enrollments.courseId, courseId))
+    .where(and(eq(enrollments.courseId, courseId), isActiveEnrollment()))
     .groupBy(enrollments.userId)
     .all();
 
@@ -546,7 +556,7 @@ function getCourseDropOff(courseId: number): CourseFunnel {
   const enrolled = db
     .select({ enrolledCount: countDistinct(enrollments.userId) })
     .from(enrollments)
-    .where(eq(enrollments.courseId, courseId))
+    .where(and(eq(enrollments.courseId, courseId), isActiveEnrollment()))
     .get();
 
   const enrolledCount = enrolled?.enrolledCount ?? 0;
@@ -583,7 +593,8 @@ function getCourseDropOff(courseId: number): CourseFunnel {
       enrollments,
       and(
         eq(enrollments.userId, lessonProgress.userId),
-        eq(enrollments.courseId, courseId)
+        eq(enrollments.courseId, courseId),
+        isActiveEnrollment()
       )
     )
     .where(
@@ -736,7 +747,7 @@ function getCourseRevenueByCountry(
   const rows = db
     .select({
       country: purchases.country,
-      gross: sum(purchases.amountPaid),
+      gross: sum(netAmountPaid),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -888,7 +899,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
   // Gross revenue, the platform's fee and the instructor's net for the range.
   const summaryRow = db
     .select({
-      gross: sum(purchases.amountPaid),
+      gross: sum(netAmountPaid),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)
@@ -908,7 +919,7 @@ export async function loader({ request, url }: Route.LoaderArgs) {
     .select({
       courseId: courses.id,
       title: courses.title,
-      gross: sum(purchases.amountPaid),
+      gross: sum(netAmountPaid),
       purchaseCount: count(purchases.id),
     })
     .from(purchases)

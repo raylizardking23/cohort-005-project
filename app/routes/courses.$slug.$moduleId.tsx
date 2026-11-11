@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import type { Route } from "./+types/courses.$slug.$moduleId";
 import { getCurrentUserId } from "~/lib/session";
 import { db } from "~/db";
+import { isActiveEnrollment } from "~/lib/enrollment.server";
 import {
   categories,
   courses,
@@ -116,7 +117,11 @@ function isUserEnrolled(userId: number, courseId: number) {
     .select()
     .from(enrollments)
     .where(
-      and(eq(enrollments.userId, userId), eq(enrollments.courseId, courseId))
+      and(
+        eq(enrollments.userId, userId),
+        eq(enrollments.courseId, courseId),
+        isActiveEnrollment()
+      )
     )
     .get();
 
